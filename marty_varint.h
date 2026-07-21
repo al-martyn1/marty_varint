@@ -279,6 +279,19 @@ MARTY_VARINT_IMPL_ENCODE(long int)
 MARTY_VARINT_IMPL_ENCODE(int)
 MARTY_VARINT_IMPL_ENCODE(short int)
 MARTY_VARINT_IMPL_ENCODE(char)
+
+inline
+size_t encode(std::uint8_t *pBuf, std::size_t bufSize, char val)
+{
+    return encode(pBuf, bufSize, (signed char)val);
+}
+
+template<typename BackInsertIteratorType>
+BackInsertIteratorType encode(BackInsertIteratorType iter, char val)
+{
+    return encode(iter, (signed char)val);
+}
+
 //----------------------------------------------------------------------------
 
 
@@ -443,6 +456,18 @@ MARTY_VARINT_IMPL_DECODE(long int)
 MARTY_VARINT_IMPL_DECODE(int)
 MARTY_VARINT_IMPL_DECODE(short int)
 MARTY_VARINT_IMPL_DECODE(char)
+
+inline
+std::size_t decode(const std::uint8_t *pBuf, std::size_t bufSize, char *pVal=0)
+{
+    return decode(pBuf, bufSize, (signed char*)pVal);
+}
+
+template<typename IteratorType>
+IteratorType decode( IteratorType b, IteratorType e, char *pVal=0)
+{
+    return decode(b, e, (signed char*)pVal);
+}
 
 //----------------------------------------------------------------------------
 
