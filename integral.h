@@ -12,6 +12,10 @@
 #include <iterator>
 #include <stdexcept>
 
+#if defined(_MSC_VER)
+    #include <intrin.h>
+#endif
+
 
 // marty::varint::
 namespace marty {
@@ -124,9 +128,11 @@ size_t encode(std::uint8_t *pBuf, unsigned long long int val)
     const std::uint8_t msb    = 0x80; // std::uint8_t(1u<<(CHAR_BIT-1));
     const std::uint8_t msbClr = std::uint8_t(~msb);
 
+    std::uint8_t curByte = 0;
+
     while(val!=0)
     {
-        std::uint8_t curByte = (std::uint8_t)(val & msbClr);
+        curByte = (std::uint8_t)(val & msbClr);
         val >>= 7; // (CHAR_BIT-1);
         pBuf[totalWritten++] = curByte;
     }
@@ -140,6 +146,81 @@ size_t encode(std::uint8_t *pBuf, unsigned long long int val)
 
     return totalWritten;
 }
+
+//----------------------------------------------------------------------------
+inline
+int mostSignificantBitImpl2(unsigned char x)
+{
+    // if (x == 0) return -1;
+    int pos = 0;
+    if (x & 0xF0) { pos += 4; x >>= 4; }
+    if (x & 0x0C) { pos += 2; x >>= 2; }
+    if (x & 0x02) { pos += 1; }
+    return pos;
+}
+
+//----------------------------------------------------------------------------
+inline
+int mostSignificantBitImpl(unsigned char x)
+{
+    if (x == 0) return -1;
+    return mostSignificantBitImpl2(x);
+}
+
+//----------------------------------------------------------------------------
+// Кроссплатформенные абстракции (Generic Builtins)
+// __builtin_clz  count leading zeros
+// __builtin_clzl
+// __builtin_clzll
+// __builtin_ctz
+// Платформо-зависимые интринсики (Target Builtins)
+// __builtin_bsr  bit scan reverse1
+// Useful Builtin functions of GCC Compiler - https://codeforces.com/blog/entry/72437?locale=ru
+// https://gcc.gnu.org/onlinedocs/gcc-9.3.0/gcc/Other-Builtins.html
+
+// _BitScanReverse, _BitScanReverse64 - https://learn.microsoft.com/en-us/cpp/intrinsics/bitscanreverse-bitscanreverse64?view=msvc-170
+// _BitScanForward
+// Compiler intrinsics - https://learn.microsoft.com/en-us/cpp/intrinsics/compiler-intrinsics?view=msvc-170
+
+#if defined(_MSC_VER)
+    // pragma must be outside function
+    #pragma intrinsic(_BitScanReverse)
+#endif
+
+inline
+int mostSignificantBit(unsigned i)
+{
+#if defined(_MSC_VER)
+    unsigned long index;
+    if (!_BitScanReverse(&index, i))
+        return -1;
+    return int(index);
+#elif defined(__GNUC__) || defined(__clang__)
+    if (i==0)
+        return -1;
+    return 31 - __builtin_clz(i);
+#else
+    if (i&0xFF000000)
+        return mostSignificantBitImpl2((unsigned char)(i>>24) + 24);
+    if (i&0x00FF0000)
+        return mostSignificantBitImpl2((unsigned char)(i>>16) + 16);
+    if (i&0x0000FF00)
+        return mostSignificantBitImpl2((unsigned char)(i>> 8) +  8);
+    if (i&0x000000FF)
+        return mostSignificantBitImpl2((unsigned char)(i    )     );
+    return -1;
+#endif
+}
+
+//----------------------------------------------------------------------------
+inline
+int mostSignificantBit(int u)
+{
+    return mostSignificantBit(unsigned(u));
+}
+
+//----------------------------------------------------------------------------
+uint32_t mask = (1u << (n + 1)) - 1u;
 
 //----------------------------------------------------------------------------
 // returns number of bytes processed from input
@@ -171,11 +252,13 @@ std::size_t decode( IteratorType b, IteratorType e
     std::reverse(&buf[0], &buf[totalReaded]);
 
     unsigned long long int res = 0;
+    std::uint8_t lastBits = 0;
 
     for(i=0; i!=totalReaded; ++i)
     {
         res <<= 7;
-        res |= (unsigned long long int)buf[i];
+        lastBits = buf[i];
+        res |= (unsigned long long int)lastBits;
         nBitsReaded += 7;
     }
 
@@ -183,8 +266,21 @@ std::size_t decode( IteratorType b, IteratorType e
     //std::size_t nBytes = (nBitsReaded%8)!=0 ? 1+nBitsReaded/8 : nBitsReaded/8;
     // if (pNumberNumBytes)
     //     *pNumberNumBytes = (nBitsReaded%CHAR_BIT)!=0 ? 1+nBitsReaded/CHAR_BIT : nBitsReaded/CHAR_BIT;
+
+    // У нас может быть прочитано 14 бит для однобайтного числа.
+    // Или 10*7=70 бит для 64х-битного числа.
+    // Или 5*7=35 бит для 32х-битного числа.
+    // Но по факту во вторых 7ми битах используется только младший бит
+    // Но если там в битах 6-1 не нули?
+    // Нам надо узнать, сколько бит реально используется в последней семёрке
+    // Или пофигу? Оно же просто отбрасыватся, даже если там что-то есть
+    // remainder or module/modulo
+    // mostSignificantBit
+
     if (pNumberNumBytes)
+    {
         *pNumberNumBytes = nBitsReaded/CHAR_BIT;
+    }
 
     if (pVal)
         *pVal = res;
